@@ -1,16 +1,4 @@
 <?php
-include "./core/db.php";
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rfid'])) {
-    $rfid = $_POST['rfid'] ?? null;
-    $loker_id = $_POST['loker'] ?? null;
-
-    if (!empty($rfid) && !empty($loker_id)) {
-        processLockerAccess($rfid, $loker_id, $konek);
-    } else {
-        die("RFID atau Loker ID tidak boleh kosong.");
-    }
-}
 
 function processLockerAccess($rfid, $loker_id, $db)
 {
@@ -18,20 +6,23 @@ function processLockerAccess($rfid, $loker_id, $db)
 
     if ($lokerData) {
         if (isLockerInUseByAnotherUser($lokerData, $rfid)) {
-            die("Loker dipakai oleh: " . $lokerData->rf_uid);
+            return ["error" => "Loker Telah Digunakan"];
         }
 
         if (isSameUserClosingLocker($lokerData, $rfid)) {
             updateLockerStatus($rfid, $loker_id, $db);
             addHistory($rfid, $loker_id, $db, 'open');
+            return ["message" => "Locker opened successfully."];
         } else {
             clearLocker($loker_id, $db);
             assignLocker($rfid, $loker_id, $db);
             addHistory($rfid, $loker_id, $db, 'close');
+            return ["message" => "Locker closed successfully."];
         }
     } else {
         assignLocker($rfid, $loker_id, $db);
         addHistory($rfid, $loker_id, $db, 'open');
+        return ["message" => "Locker assigned and opened successfully."];
     }
 }
 
@@ -54,10 +45,8 @@ function isSameUserClosingLocker($lokerData, $rfid)
 function updateLockerStatus($rfid, $loker_id, $db)
 {
     $update = $db->query("UPDATE lokers_access SET tap_ke = 2, locker_number = '$loker_id' WHERE rf_uid = '$rfid'");
-    if ($update) {
-        die($rfid);
-    } else {
-        die("Gagal memperbarui status loker.");
+    if (!$update) {
+        return ["error" => "Gagal memperbarui status loker."];
     }
 }
 
@@ -69,10 +58,8 @@ function clearLocker($loker_id, $db)
 function assignLocker($rfid, $loker_id, $db)
 {
     $insert = $db->query("INSERT INTO lokers_access (rf_uid, tap_ke, locker_number) VALUES ('$rfid', 1, '$loker_id')");
-    if ($insert) {
-        die($rfid);
-    } else {
-        die("Gagal menambahkan data loker.");
+    if (!$insert) {
+        return ["error" => "Gagal menambahkan data loker."];
     }
 }
 
@@ -82,13 +69,13 @@ function addHistory($rfid, $loker_id, $db, $action)
     if ($action === 'open') {
         $query = "INSERT INTO history (rf_id, open_locker_at, locker_number) VALUES ('$rfid', '$timestamp', '$loker_id')";
         if (!$db->query($query)) {
-            die("Gagal menyimpan riwayat pembukaan: " . $db->error);
+            return ["error" => "Gagal menyimpan riwayat pembukaan: " . $db->error];
         }
     }
     if ($action === 'close') {
         $query = "UPDATE history SET close_locker_at = '$timestamp' WHERE rf_id = '$rfid' AND locker_number = '$loker_id' AND close_locker_at IS NULL";
         if (!$db->query($query)) {
-            die("Gagal memperbarui riwayat penutupan: " . $db->error);
+            return ["error" => "Gagal memperbarui riwayat penutupan: " . $db->error];
         }
     }
 }
